@@ -1,0 +1,109 @@
+@Library('shared-library') _
+
+pipeline {
+
+    agent any
+
+    parameters {
+        string(name: 'AWS', defaultValue: 'ecommerce')
+    }
+
+    stages {
+
+        stage('Initialize') {
+
+            steps {
+
+                script {
+
+                    def config = awsEnv(params.AWS)
+
+                    env.ACCOUNT_ID = config.ACCOUNT_ID
+                    env.AWS_REGION = config.AWS_REGION
+                    env.ECR_REPO   = config.ECR_REPO
+                    env.ECR_URL    = config.ECR_URL
+                    env.GIT_URL    = config.GIT_URL
+                    env.IMAGE_NAME = config.ECR_REPO
+                }
+            }
+        }
+
+        stage('Checkout') {
+
+            steps {
+                gitCheckout()
+            }
+        }
+
+        stage('Build and Test (Maven)') {
+
+            steps {
+                mvnBuild()
+            }
+        }
+
+        stage('Build Docker image') {
+
+            steps {
+
+                script {
+                    dockerBuild(imageName: env.IMAGE_NAME)
+                }
+            }
+        }
+
+        stage('ECR login') {
+
+            steps {
+
+                script {
+                    ecrLogin()
+                }
+            }
+        }
+
+        stage('Tag Docker Image') {
+
+            steps {
+
+                script {
+
+                    dockerTag(
+                        imageName: env.IMAGE_NAME,
+                        ecrURL: env.ECR_URL,
+                        tags: env.APP_VERSION
+                    )
+                }
+            }
+        }
+
+        stage('Push to ECR') {
+
+            steps {
+
+                script {
+
+                    dockerPush(
+                        ecrUrl: env.ECR_URL,
+                        tag: env.APP_VERSION
+                    )
+                }
+            }
+        }
+    }
+
+    post {
+
+        success {
+            echo 'Pipeline executed successfully!'
+        }
+
+        failure {
+            echo 'Pipeline failed, check logs for details'
+        }
+
+        always {
+            cleanWs()
+        }
+    }
+}
